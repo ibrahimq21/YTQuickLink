@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 300px;
+      padding: 12px;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #fff;
+      margin: 0;
+    }
+    h1 { color: #f00; font-size: 15px; margin: 0 0 8px; }
+    .info { background: #222; padding: 10px; border-radius: 6px; margin-bottom: 10px; }
+    .info div { font-size: 12px; }
+    .title { color: #fff; margin-bottom: 4px; }
+    .status { color: #888; }
+    .btn {
+      background: #f00; color: #fff; border: none;
+      padding: 10px; border-radius: 5px;
+      cursor: pointer; font-size: 13px; width: 100%;
+    }
+    .btn:hover { background: #c00; }
+    #r { margin-top: 8px; padding: 8px; border-radius: 4px; font-size: 11px; word-break: break-all; display: none; }
+    .suc { background: #141; color: #4f4; }
+    .err { background: #311; color: #f44; }
+    .link { display: block; margin-top: 8px; padding: 8px; background: #222; color: #4af; text-align: center; border-radius: 4px; text-decoration: none; }
+    .link:hover { background: #333; }
+  </style>
+</head>
+<body>
+  <h1>⚡ YTQuickLink</h1>
+  <div class="info">
+    <div class="title" id="t">Loading...</div>
+    <div class="status" id="s">...</div>
+  </div>
+  <button class="btn" id="btn">📋 Copy Link</button>
+  <div id="r"><span id="rt"></span></div>
+  <a class="link" id="lnk" href="#" target="_blank">🚀 Open Modified</a>
+  <script src="popup.js"></script>
+</body>
+</html>

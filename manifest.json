@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "YTQuickLink",
+  "short_name": "YTQuickLink",
+  "version": "1.8",
+  "description": "Grab YouTube links with one click",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "clipboardWrite",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "*://*.yout-ube.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icon.svg"
+    }
+  },
+  "icons": {
+    "48": "icon.svg"
+  },
+  "background": {
+    "scripts": ["background.js"]
+  }
+}

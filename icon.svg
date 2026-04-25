@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <!-- Red triangular frame (like YouTube Vanced) -->
+  <polygon points="6,6 6,42 42,24" fill="none" stroke="#FF0000" stroke-width="4" stroke-linejoin="round"/>
+  
+  <!-- Blue arrow pointing right -->
+  <polygon points="16,18 34,24 16,30" fill="#1E90FF"/>
+</svg>
