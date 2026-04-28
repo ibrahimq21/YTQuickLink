@@ -1,53 +1,73 @@
 // YTQuickLink - Background script
-// Fixed: storage for persistence, message handling
-
 var runtimeAPI = (typeof browser !== 'undefined' && browser.runtime) || (typeof chrome !== 'undefined' && chrome.runtime);
 
-// Current stored URL
+// Unified async storage wrapper
+var api = {
+  storage: {
+    get: function(keys) {
+      return runtimeAPI.storage.local.get(keys);
+    },
+    set: function(data) {
+      return runtimeAPI.storage.local.set(data);
+    }
+  }
+};
+
+// Current stored URL (in-memory cache)
 var currentModifiedUrl = '';
 var currentVideoId = '';
 
-// Save to storage
+// In-memory state for popup reactivity
+var uiState = {
+  modifiedUrl: '',
+  videoId: '',
+  lastUpdated: null
+};
+
+// Action dispatcher — scalable, replaces if-else chains
+var handlers = {
+  thumbnailClicked: function(data) { saveUrl(data); },
+  videoChanged: function(data) { saveUrl(data); },
+  videoNavigate: function(data) { saveUrl(data); },
+  getStoredUrl: function(request, sender, sendResponse) {
+    sendResponse({ modifiedUrl: currentModifiedUrl, videoId: currentVideoId });
+    return true;
+  },
+  getUIState: function(request, sender, sendResponse) {
+    sendResponse(uiState);
+    return true;
+  }
+};
+
 function saveUrl(data) {
   currentModifiedUrl = data.modifiedUrl || '';
   currentVideoId = data.videoId || '';
-  
-  // Also save to browser storage for persistence
-  if (runtimeAPI && runtimeAPI.storage && runtimeAPI.storage.local) {
-    runtimeAPI.storage.local.set({
-      modifiedUrl: currentModifiedUrl,
-      videoId: currentVideoId
-    });
-  }
+  uiState.modifiedUrl = currentModifiedUrl;
+  uiState.videoId = currentVideoId;
+  uiState.lastUpdated = Date.now();
+  api.storage.set({ modifiedUrl: currentModifiedUrl, videoId: currentVideoId, version: 1 });
 }
 
 // Load from storage on startup
 function loadSavedUrl() {
-  if (runtimeAPI && runtimeAPI.storage && runtimeAPI.storage.local) {
-    runtimeAPI.storage.local.get(['modifiedUrl', 'videoId']).then(function(items) {
-      if (items.modifiedUrl) {
-        currentModifiedUrl = items.modifiedUrl;
-        currentVideoId = items.videoId || '';
-      }
-    }).catch(function() {});
-  }
+  api.storage.get(['modifiedUrl', 'videoId', 'version']).then(function(items) {
+    if (items.modifiedUrl) {
+      currentModifiedUrl = items.modifiedUrl;
+      currentVideoId = items.videoId || '';
+      uiState.modifiedUrl = currentModifiedUrl;
+      uiState.videoId = currentVideoId;
+    }
+  }).catch(function() {});
 }
 
-// Initialize storage
 loadSavedUrl();
 
-// Listen for messages from content/popup
+// Listen for messages — dispatcher pattern
 if (runtimeAPI && runtimeAPI.onMessage) {
   runtimeAPI.onMessage.addListener(function(request, sender, sendResponse) {
-    if (request.action === 'thumbnailClicked' || request.action === 'videoNavigate') {
-      saveUrl(request);
-    }
-    if (request.action === 'videoChanged') {
-      saveUrl(request);
-    }
-    if (request.action === 'getStoredUrl') {
-      sendResponse({ modifiedUrl: currentModifiedUrl, videoId: currentVideoId });
-      return true;
+    var handler = handlers[request.action];
+    if (handler) {
+      return handler(request, sender, sendResponse);
     }
   });
 }

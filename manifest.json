@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "YTQuickLink",
   "short_name": "YTQuickLink",
-  "version": "1.8",
+  "version": "1.9",
   "id": "ytquicklink@ibrahimqureshi",
   "description": "Grab YouTube links with one click",
   "permissions": [
@@ -12,8 +12,10 @@
     "storage"
   ],
   "host_permissions": [
-    "*://*.youtube.com/*",
-    "*://*.yout-ube.com/*"
+    "*://www.youtube.com/*",
+    "*://m.youtube.com/*",
+    "*://music.youtube.com/*",
+    "*://www.yout-ube.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
