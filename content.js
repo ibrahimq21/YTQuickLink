@@ -91,6 +91,16 @@ var pendingHoverFrame = false;
 var lastMouseX = 0;
 var lastMouseY = 0;
 
+// MutationObserver — invalidate hover state when anchor nodes are removed/replaced during DOM rewrites
+var hoverAnchor = null;
+var observer = new MutationObserver(function() {
+  if (hoverAnchor && !document.contains(hoverAnchor)) {
+    hoveredVideoId = null;
+    hoveredModifiedUrl = null;
+    hoverAnchor = null;
+  }
+});
+
 function handleMouseMove(event) {
   lastMouseX = event.clientX;
   lastMouseY = event.clientY;
@@ -103,16 +113,17 @@ function handleMouseMove(event) {
 function resolveHoverFrame() {
   pendingHoverFrame = false;
   var el = document.elementFromPoint(lastMouseX, lastMouseY);
-  if (!el) { hoveredVideoId = null; hoveredModifiedUrl = null; return; }
+  if (!el) { hoveredVideoId = null; hoveredModifiedUrl = null; hoverAnchor = null; return; }
   var link = el.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
-  if (!link) { hoveredVideoId = null; hoveredModifiedUrl = null; return; }
+  if (!link) { hoveredVideoId = null; hoveredModifiedUrl = null; hoverAnchor = null; return; }
   var href = link.href;
-  if (!href || !href.includes('/watch')) { hoveredVideoId = null; hoveredModifiedUrl = null; return; }
+  if (!href || !href.includes('/watch')) { hoveredVideoId = null; hoveredModifiedUrl = null; hoverAnchor = null; return; }
   try {
     var videoId = extractVideoId(new URL(href));
     if (videoId) {
       hoveredVideoId = videoId;
       hoveredModifiedUrl = 'https://www.yout-ube.com/watch?v=' + videoId;
+      hoverAnchor = link;
     }
   } catch (err) {}
 }
@@ -195,13 +206,6 @@ function debounceNavigation() {
 }
 
 function setupNavigationListener() {
-  // Reset init guard on new navigation — allows re-init on SPA page transitions
-  document.addEventListener('yt-navigate-start', function() {
-    initialized = false;
-    hoveredVideoId = null;
-    hoveredModifiedUrl = null;
-  });
-
   // popstate
   window.addEventListener('popstate', debounceNavigation);
 
@@ -229,6 +233,7 @@ if (runtimeAPI && runtimeAPI.onMessage) {
 var init = function() {
   if (initialized) return;
   initialized = true;
+  observer.observe(document.body, { childList: true, subtree: true });
   setupAuxClickListener();
   setupThumbnailListener();
   setupNavigationListener();
