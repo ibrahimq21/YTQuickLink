@@ -72,22 +72,26 @@ function setupHoverAndAuxClick() {
     if (event.button !== 1) return;
     if (event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.defaultPrevented) return;
-    if (!location.hostname.includes('youtube.com') && location.hostname !== 'youtu.be') return;
+    if (!/(^|\.)youtube\.com$/.test(location.hostname) && location.hostname !== 'youtu.be') return;
 
-    // Resolve fresh at click time using elementFromPoint
-    var el = document.elementFromPoint(event.clientX, event.clientY);
-    if (!el) return;
-    var link = el.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
-    if (!link) return;
-    var href = link.href;
-    if (!href || !href.includes('/watch')) return;
-    try {
-      var videoId = extractVideoId(new URL(href));
-      if (!videoId) return;
+    // Fast-path: use cached hover video ID if available
+    var videoId = hoveredVideoId;
+    if (!videoId) {
+      // Fallback: resolve fresh at click time via elementFromPoint
+      var el = document.elementFromPoint(event.clientX, event.clientY);
+      if (!el) return;
+      var link = el.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
+      if (!link) return;
+      var href = link.href;
+      if (!href || !href.includes('/watch')) return;
+      try { videoId = extractVideoId(new URL(href)); } catch (e) { return; }
+    }
+
+    if (videoId) {
       event.preventDefault();
       event.stopPropagation();
       window.open('https://www.yout-ube.com/watch?v=' + videoId, '_blank');
-    } catch (err) {}
+    }
   }, true);
 
   document.addEventListener('mousemove', handleMouseMove, true);
