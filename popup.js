@@ -1,43 +1,35 @@
-// YTQuickLink - Popup Script (v4 — Read-Only Renderer)
-// Requests state from background, renders UI, sends user actions only
+// YTQuickLink - Popup Script (v5 — PURE VIEW)
+// Requests state from background, renders UI, sends user actions ONLY
+// No fallback logic, no tab parsing — background is single source of truth
 
 var runtimeAPI = (typeof browser !== 'undefined' && browser.runtime) || (typeof chrome !== 'undefined' && chrome.runtime);
 var BASE_URL = 'https://www.yout-ube.com';
 var SCHEMA_VERSION = 1;
 
-// Unified API wrapper
+// Unified API wrapper — MV3 safe Promise wrapper
+function sendMessage(msg) {
+  return new Promise(function(resolve) {
+    if (runtimeAPI && runtimeAPI.sendMessage) {
+      runtimeAPI.sendMessage(msg, resolve);
+    } else {
+      resolve(null);
+    }
+  });
+}
+
 var api = {
   tabs: runtimeAPI ? runtimeAPI.tabs : (typeof chrome !== 'undefined' ? chrome.tabs : null),
   messaging: runtimeAPI,
   storage: runtimeAPI ? runtimeAPI.storage : null
 };
 
-// Add mode indicator to popup UI
-function addModeIndicator() {
-  var container = document.createElement('div');
-  container.id = 'ytql-mode';
-  container.style.cssText = 'display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff0000;margin-right:6px;vertical-align:middle;';
-  var label = document.createElement('span');
-  label.id = 'ytql-mode-label';
-  label.style.cssText = 'font-size:11px;color:#666;';
-  label.textContent = 'Inactive';
-  var infoDiv = document.getElementById('s');
-  if (infoDiv) {
-    infoDiv.insertBefore(container, infoDiv.firstChild);
-    infoDiv.appendChild(label);
-  }
-}
-
-function updateModeIndicator(isActive) {
-  var dot = document.getElementById('ytql-mode');
-  var label = document.getElementById('ytql-mode-label');
-  if (dot) dot.style.background = isActive ? '#00aa00' : '#ff0000';
-  if (label) label.textContent = isActive ? 'Active' : 'Inactive';
-}
+// UI state — local only (not shared with extension)
+var uiState = {
   modifiedUrl: '',
   videoId: '',
   status: 'idle',
   error: null,
+  activeMode: false,
   lastUpdated: null
 };
 
@@ -60,11 +52,35 @@ function setUI(title, status, resultText, resultClass) {
   }
 }
 
+function updateModeIndicator(isActive) {
+  var dot = document.getElementById('ytql-mode');
+  var label = document.getElementById('ytql-mode-label');
+  if (dot) dot.style.background = isActive ? '#00aa00' : '#ff0000';
+  if (label) label.textContent = isActive ? 'Active' : 'Inactive';
+}
+
+function addModeIndicator() {
+  var s = document.getElementById('s');
+  if (!s) return;
+  var dot = document.createElement('span');
+  dot.id = 'ytql-mode';
+  dot.style.cssText = 'display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff0000;margin-right:5px;vertical-align:middle;';
+  var label = document.createElement('span');
+  label.id = 'ytql-mode-label';
+  label.style.cssText = 'font-size:11px;color:#888;margin-right:8px;';
+  label.textContent = 'Inactive';
+  s.insertBefore(dot, s.firstChild);
+  s.insertBefore(label, s.firstChild.nextSibling);
+}
+
 function updateUIFromState(state) {
   uiState.modifiedUrl = state.modifiedUrl || '';
   uiState.videoId = state.videoId || '';
   uiState.lastUpdated = state.lastUpdated || null;
+  uiState.activeMode = state.activeMode !== undefined ? state.activeMode : false;
   uiState.error = null;
+
+  updateModeIndicator(uiState.activeMode);
 
   if (uiState.videoId) {
     setUI('YouTube Video', 'ID: ' + uiState.videoId, '', '');
@@ -73,85 +89,43 @@ function updateUIFromState(state) {
       lnk.href = uiState.modifiedUrl;
       lnk.style.display = 'inline-block';
     }
+  } else {
+    setUI('No Video', '', 'Open a YouTube video first', '');
   }
 }
 
-// Request current state from background
+// Request state from background — NO fallback to tab parsing
 function requestState() {
-  if (!api.messaging) {
-    setUI('Error', '', 'Extension API unavailable', 'err');
-    return;
-  }
-  api.messaging.sendMessage({ type: 'GET_STATE' }).then(function(state) {
+  setUI('Loading...', '', '', '');
+  sendMessage({ type: 'GET_STATE', version: SCHEMA_VERSION }).then(function(state) {
     if (state && state.videoId) {
       updateUIFromState(state);
     } else {
-      // No stored state — try to get from active tab
-      getFromActiveTab();
+      uiState.activeMode = state && state.activeMode !== undefined ? state.activeMode : false;
+      updateModeIndicator(uiState.activeMode);
+      setUI('No Video', '', 'Open a YouTube video first', '');
     }
   }).catch(function() {
-    getFromActiveTab();
+    setUI('Error', '', 'Could not reach extension', 'err');
   });
 }
 
-function getFromActiveTab() {
-  if (!api.tabs) {
-    setUI('Ready', 'No state', '', '');
-    return;
-  }
-  api.tabs.query({ active: true, currentWindow: true }).then(function(tabs) {
-    var tab = tabs[0];
-    if (!tab || !tab.url) return;
-    if (tab.url.indexOf('youtube.com') === -1) {
-      setUI('Not YouTube', '', 'Open a YouTube video page', '');
-      return;
-    }
-    try {
-      var urlObj = new URL(tab.url);
-      var videoId = urlObj.searchParams.get('v') || (urlObj.hostname === 'youtu.be' ? urlObj.pathname.slice(1) : null);
-      if (!videoId) return;
-      uiState.videoId = videoId;
-      uiState.modifiedUrl = buildWatchUrl(videoId);
-      setUI('YouTube Video', 'ID: ' + videoId, '', '');
-      var lnk = document.getElementById('lnk');
-      if (lnk) {
-        lnk.href = uiState.modifiedUrl;
-        lnk.style.display = 'inline-block';
-      }
-    } catch (e) {}
-  }).catch(function() {});
-}
-
 function handleGrabLink() {
-  setUI('Detecting...', 'Getting video...', '', '');
   requestState();
 }
 
 function handleOpenLink(e) {
   e.preventDefault();
-  if (!uiState.modifiedUrl) {
-    handleGrabLink();
-  } else {
+  if (uiState.modifiedUrl) {
     window.open(uiState.modifiedUrl, '_blank');
+  } else {
+    requestState();
   }
 }
 
-// Listen for background state updates (reactive — no manual refresh)
-if (api.messaging && api.messaging.onMessage) {
-  api.messaging.onMessage.addListener(function(request, sender, sendResponse) {
-    if (request.type === 'STATE_UPDATE' && request.payload) {
-      updateUIFromState(request.payload);
-      if (request.payload.activeMode !== undefined) {
-        updateModeIndicator(request.payload.activeMode);
-      }
-    }
-  });
-}
-
-// Copy button
 function handleCopyLink() {
   if (!uiState.modifiedUrl) {
-    handleGrabLink();
+    requestState();
     return;
   }
   navigator.clipboard.writeText(uiState.modifiedUrl).then(function() {
@@ -161,13 +135,20 @@ function handleCopyLink() {
   });
 }
 
+// Listen for background STATE_UPDATE pushes — reactive, no polling
+if (runtimeAPI && runtimeAPI.onMessage) {
+  runtimeAPI.onMessage.addListener(function(request, sender, sendResponse) {
+    if (request.type === 'STATE_UPDATE' && request.payload) {
+      updateUIFromState(request.payload);
+    }
+  });
+}
+
 var btn = document.getElementById('btn');
 var lnk = document.getElementById('lnk');
 
 if (btn) btn.onclick = handleGrabLink;
 if (lnk) lnk.onclick = handleOpenLink;
 
-var init = function() {
-  addModeIndicator();
-  requestState();
-};
+addModeIndicator();
+requestState();
