@@ -106,23 +106,30 @@ function requestState() {
   });
 }
 
-function doCopy() {
+function handleCopy(e) {
+  console.log('[YTQL popup] handleCopy called', { modifiedUrl: uiState.modifiedUrl, videoId: uiState.videoId });
   if (!uiState.modifiedUrl) {
+    console.log('[YTQL popup] no URL cached, requesting state');
     requestState();
     return;
   }
   navigator.clipboard.writeText(uiState.modifiedUrl).then(function() {
+    console.log('[YTQL popup] copied to clipboard:', uiState.modifiedUrl);
     setUI('YouTube Video', 'ID: ' + uiState.videoId, '\u2713 Copied!', 'suc');
-  }).catch(function() {
+  }).catch(function(err) {
+    console.error('[YTQL popup] copy failed:', err);
     setUI('YouTube Video', 'ID: ' + uiState.videoId, 'Copy failed', 'err');
   });
 }
 
-function handleOpenLink(e) {
+function handleOpenModifiedPage(e) {
+  console.log('[YTQL popup] handleOpenModifiedPage called', { modifiedUrl: uiState.modifiedUrl });
   e.preventDefault();
   if (uiState.modifiedUrl) {
+    console.log('[YTQL popup] opening modified URL:', uiState.modifiedUrl);
     window.open(uiState.modifiedUrl, '_blank');
   } else {
+    console.log('[YTQL popup] no URL, requesting state first');
     requestState();
   }
 }
@@ -140,8 +147,8 @@ if (runtimeAPI && runtimeAPI.onMessage) {
 var btn = document.getElementById('btn');
 var lnk = document.getElementById('lnk');
 
-if (btn) btn.addEventListener('click', doCopy);
-if (lnk) lnk.addEventListener('click', handleOpenLink);
+if (btn) btn.addEventListener('click', handleCopy);
+if (lnk) lnk.addEventListener('click', handleOpenModifiedPage);
 
 addModeIndicator();
 requestState();
