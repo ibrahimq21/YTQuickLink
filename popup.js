@@ -108,13 +108,16 @@ function getFromActiveTab() {
       return;
     }
     console.log('[YTQL popup] tab URL:', tab.url);
-    if (tab.url.indexOf('youtube.com') === -1 && tab.url.indexOf('youtu.be') === -1) {
+    if (tab.url.indexOf('youtube.com') === -1 && tab.url.indexOf('youtu.be') === -1 && tab.url.indexOf('youtube-nocookie.com') === -1) {
       setUI('Not YouTube', '', 'Open a YouTube video first', '');
       return;
     }
     try {
       var urlObj = new URL(tab.url);
-      var videoId = urlObj.searchParams.get('v') || (urlObj.hostname === 'youtu.be' ? urlObj.pathname.slice(1) : null);
+      var videoId = urlObj.searchParams.get('v') || (urlObj.pathname.split('/').pop()) || null;
+      if (!videoId && urlObj.hostname === 'www.youtube-nocookie.com') {
+        videoId = urlObj.searchParams.get('playlist') || null;
+      }
       if (!videoId) {
         setUI('No Video', '', 'Open a YouTube video first', '');
         return;
