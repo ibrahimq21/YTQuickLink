@@ -12,8 +12,28 @@ var api = {
   storage: runtimeAPI ? runtimeAPI.storage : null
 };
 
-// UI state — separate from extension state
-var uiState = {
+// Add mode indicator to popup UI
+function addModeIndicator() {
+  var container = document.createElement('div');
+  container.id = 'ytql-mode';
+  container.style.cssText = 'display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff0000;margin-right:6px;vertical-align:middle;';
+  var label = document.createElement('span');
+  label.id = 'ytql-mode-label';
+  label.style.cssText = 'font-size:11px;color:#666;';
+  label.textContent = 'Inactive';
+  var infoDiv = document.getElementById('s');
+  if (infoDiv) {
+    infoDiv.insertBefore(container, infoDiv.firstChild);
+    infoDiv.appendChild(label);
+  }
+}
+
+function updateModeIndicator(isActive) {
+  var dot = document.getElementById('ytql-mode');
+  var label = document.getElementById('ytql-mode-label');
+  if (dot) dot.style.background = isActive ? '#00aa00' : '#ff0000';
+  if (label) label.textContent = isActive ? 'Active' : 'Inactive';
+}
   modifiedUrl: '',
   videoId: '',
   status: 'idle',
@@ -121,6 +141,9 @@ if (api.messaging && api.messaging.onMessage) {
   api.messaging.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.type === 'STATE_UPDATE' && request.payload) {
       updateUIFromState(request.payload);
+      if (request.payload.activeMode !== undefined) {
+        updateModeIndicator(request.payload.activeMode);
+      }
     }
   });
 }
@@ -144,5 +167,7 @@ var lnk = document.getElementById('lnk');
 if (btn) btn.onclick = handleGrabLink;
 if (lnk) lnk.onclick = handleOpenLink;
 
-// Auto-request state on open
-requestState();
+var init = function() {
+  addModeIndicator();
+  requestState();
+};

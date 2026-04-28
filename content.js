@@ -63,6 +63,8 @@ function createToggleButton() {
     btn.innerText = activeMode ? 'YTQuickLink: ON' : 'YTQuickLink: OFF';
     btn.style.background = activeMode ? '#00aa00' : '#ff0000';
     if (!activeMode) clearHover();
+    // Report toggle state to background for popup awareness
+    emit('ACTIVE_MODE_CHANGED', { activeMode: activeMode });
   };
   document.body.appendChild(btn);
 }

@@ -10,7 +10,8 @@ var state = {
   videoId: '',
   modifiedUrl: '',
   lastUpdated: null,
-  version: SCHEMA_VERSION
+  version: SCHEMA_VERSION,
+  activeMode: false
 };
 
 // Reducer — pure state transitions
@@ -78,6 +79,9 @@ var handlers = {
   GET_STATE: function(request, sender, sendResponse) {
     sendResponse(state);
     return true;
+  },
+  ACTIVE_MODE_CHANGED: function(data) {
+    state.activeMode = data.payload && data.payload.activeMode !== undefined ? data.payload.activeMode : false;
   }
 };
 
