@@ -83,6 +83,9 @@ function sendToBackground(action, data) {
 var hoveredVideoId = null;
 var hoveredModifiedUrl = null;
 
+// Lifecycle guard — prevent duplicate registration during SPA re-renders
+var initialized = false;
+
 // rAF-based hover scheduler — prevents redundant DOM queries during scroll/reflow
 var pendingHoverFrame = false;
 var lastMouseX = 0;
@@ -192,9 +195,16 @@ function debounceNavigation() {
 }
 
 function setupNavigationListener() {
+  // Reset init guard on new navigation — allows re-init on SPA page transitions
+  document.addEventListener('yt-navigate-start', function() {
+    initialized = false;
+    hoveredVideoId = null;
+    hoveredModifiedUrl = null;
+  });
+
   // popstate
   window.addEventListener('popstate', debounceNavigation);
-  
+
   // YouTube SPA events
   document.addEventListener('yt-navigate-finish', debounceNavigation);
   document.addEventListener('yt-page-data-updated', debounceNavigation);
@@ -217,6 +227,8 @@ if (runtimeAPI && runtimeAPI.onMessage) {
 
 // Initialize
 var init = function() {
+  if (initialized) return;
+  initialized = true;
   setupAuxClickListener();
   setupThumbnailListener();
   setupNavigationListener();
