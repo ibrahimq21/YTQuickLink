@@ -1,6 +1,9 @@
-// YTQuickLink - Popup Script v3.0
+// YTQuickLink - Popup Script (v4 — Read-Only Renderer)
+// Requests state from background, renders UI, sends user actions only
 
 var runtimeAPI = (typeof browser !== 'undefined' && browser.runtime) || (typeof chrome !== 'undefined' && chrome.runtime);
+var BASE_URL = 'https://www.yout-ube.com';
+var SCHEMA_VERSION = 1;
 
 // Unified API wrapper
 var api = {
@@ -14,11 +17,13 @@ var uiState = {
   modifiedUrl: '',
   videoId: '',
   status: 'idle',
-  error: null
+  error: null,
+  lastUpdated: null
 };
 
-// Versioned storage schema
-var STORAGE_VERSION = 1;
+function buildWatchUrl(videoId) {
+  return BASE_URL + '/watch?v=' + videoId;
+}
 
 function setUI(title, status, resultText, resultClass) {
   var t = document.getElementById('t');
@@ -35,73 +40,71 @@ function setUI(title, status, resultText, resultClass) {
   }
 }
 
-function getYouTubeUrl() {
-  if (!api.tabs) {
-    return Promise.resolve({ error: 'No tabs API available' });
-  }
+function updateUIFromState(state) {
+  uiState.modifiedUrl = state.modifiedUrl || '';
+  uiState.videoId = state.videoId || '';
+  uiState.lastUpdated = state.lastUpdated || null;
+  uiState.error = null;
 
-  return api.tabs.query({ active: true, currentWindow: true }).then(function(tabs) {
-    var tab = tabs[0];
-    if (!tab || !tab.url) return { error: 'No active tab' };
-    if (tab.url.indexOf('youtube.com') === -1) return { error: 'Not on YouTube' };
-
-    var urlObj = new URL(tab.url);
-    var videoId = urlObj.searchParams.get('v') || (urlObj.hostname === 'youtu.be' ? urlObj.pathname.slice(1) : null);
-    if (!videoId) return { error: 'No video ID' };
-
-    return {
-      videoId: videoId,
-      modifiedUrl: 'https://www.yout-ube.com/watch?v=' + videoId,
-      tabId: tab.id
-    };
-  }).catch(function(err) {
-    return { error: err.message || 'Tab query failed' };
-  });
-}
-
-function handleGrabLink() {
-  setUI('Detecting...', 'Getting video...', '', '');
-
-  getYouTubeUrl().then(function(data) {
-    if (data.error) {
-      setUI('Error', '', data.error, 'err');
-      uiState.error = data.error;
-      return;
-    }
-
-    uiState.modifiedUrl = data.modifiedUrl;
-    uiState.videoId = data.videoId;
-    uiState.error = null;
-
-    setUI('YouTube Video', 'ID: ' + data.videoId, '', '');
-
+  if (uiState.videoId) {
+    setUI('YouTube Video', 'ID: ' + uiState.videoId, '', '');
     var lnk = document.getElementById('lnk');
     if (lnk) {
       lnk.href = uiState.modifiedUrl;
       lnk.style.display = 'inline-block';
     }
+  }
+}
 
-    navigator.clipboard.writeText(uiState.modifiedUrl).then(function() {
-      setUI('YouTube Video', 'ID: ' + data.videoId, '\u2713 Copied!', 'suc');
-    }).catch(function() {
-      setUI('YouTube Video', 'ID: ' + data.videoId, 'Copy failed — clipboard unavailable', 'err');
-    });
+// Request current state from background
+function requestState() {
+  if (!api.messaging) {
+    setUI('Error', '', 'Extension API unavailable', 'err');
+    return;
+  }
+  api.messaging.sendMessage({ type: 'GET_STATE' }).then(function(state) {
+    if (state && state.videoId) {
+      updateUIFromState(state);
+    } else {
+      // No stored state — try to get from active tab
+      getFromActiveTab();
+    }
+  }).catch(function() {
+    getFromActiveTab();
   });
 }
 
-// Listen for background state updates (reactive UI — no refresh needed)
-if (api.messaging && api.messaging.onMessage) {
-  api.messaging.onMessage.addListener(function(request, sender, sendResponse) {
-    if (request.action === 'stateUpdate') {
-      uiState.modifiedUrl = request.modifiedUrl || uiState.modifiedUrl;
-      uiState.videoId = request.videoId || uiState.videoId;
+function getFromActiveTab() {
+  if (!api.tabs) {
+    setUI('Ready', 'No state', '', '');
+    return;
+  }
+  api.tabs.query({ active: true, currentWindow: true }).then(function(tabs) {
+    var tab = tabs[0];
+    if (!tab || !tab.url) return;
+    if (tab.url.indexOf('youtube.com') === -1) {
+      setUI('Not YouTube', '', 'Open a YouTube video page', '');
+      return;
+    }
+    try {
+      var urlObj = new URL(tab.url);
+      var videoId = urlObj.searchParams.get('v') || (urlObj.hostname === 'youtu.be' ? urlObj.pathname.slice(1) : null);
+      if (!videoId) return;
+      uiState.videoId = videoId;
+      uiState.modifiedUrl = buildWatchUrl(videoId);
+      setUI('YouTube Video', 'ID: ' + videoId, '', '');
       var lnk = document.getElementById('lnk');
-      if (lnk && uiState.modifiedUrl) {
+      if (lnk) {
         lnk.href = uiState.modifiedUrl;
         lnk.style.display = 'inline-block';
       }
-    }
-  });
+    } catch (e) {}
+  }).catch(function() {});
+}
+
+function handleGrabLink() {
+  setUI('Detecting...', 'Getting video...', '', '');
+  requestState();
 }
 
 function handleOpenLink(e) {
@@ -113,11 +116,33 @@ function handleOpenLink(e) {
   }
 }
 
+// Listen for background state updates (reactive — no manual refresh)
+if (api.messaging && api.messaging.onMessage) {
+  api.messaging.onMessage.addListener(function(request, sender, sendResponse) {
+    if (request.type === 'STATE_UPDATE' && request.payload) {
+      updateUIFromState(request.payload);
+    }
+  });
+}
+
+// Copy button
+function handleCopyLink() {
+  if (!uiState.modifiedUrl) {
+    handleGrabLink();
+    return;
+  }
+  navigator.clipboard.writeText(uiState.modifiedUrl).then(function() {
+    setUI('YouTube Video', 'ID: ' + uiState.videoId, '\u2713 Copied!', 'suc');
+  }).catch(function() {
+    setUI('YouTube Video', 'ID: ' + uiState.videoId, 'Copy failed', 'err');
+  });
+}
+
 var btn = document.getElementById('btn');
 var lnk = document.getElementById('lnk');
 
 if (btn) btn.onclick = handleGrabLink;
 if (lnk) lnk.onclick = handleOpenLink;
 
-// Auto-detect on open
-handleGrabLink();
+// Auto-request state on open
+requestState();

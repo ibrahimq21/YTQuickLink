@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "YTQuickLink",
   "short_name": "YTQuickLink",
-  "version": "1.9",
+  "version": "2.0",
   "id": "ytquicklink@ibrahimqureshi",
   "description": "Grab YouTube links with one click",
   "permissions": [

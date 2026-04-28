@@ -1,40 +1,13 @@
-// YTQuickLink - Content script
+// YTQuickLink - Content Script (Event Emitter Only)
+// Does NOT store state, build URLs, or manage UI
+// Only detects YouTube events, extracts videoId, and emits to background
+
 var runtimeAPI = (typeof browser !== 'undefined' && browser.runtime) || (typeof chrome !== 'undefined' && chrome.runtime);
+var BASE_URL = 'https://www.yout-ube.com';
+var SCHEMA_VERSION = 1;
 
-// Feature toggle — disabled by default, user-activated via button
+// Feature toggle (user-activated)
 var activeMode = false;
-
-// Extract video ID from any YouTube URL object
-function extractVideoId(urlObj) {
-  return urlObj.searchParams.get('v') || (urlObj.hostname === 'youtu.be' ? urlObj.pathname.slice(1) : null);
-}
-
-function getVideoInfo() {
-  try {
-    var url = window.location.href;
-    if (!url.includes('youtube.com')) return { error: 'Not a YouTube page' };
-    var urlObj = new URL(url);
-    var videoId = extractVideoId(urlObj);
-    if (!videoId) return { error: 'No video ID found' };
-    var titleSelectors = ['h1.ytd-video-title', 'yt-formatted-string.ytd-video-title', '#movie_player .ytp-title-link'];
-    var title = '';
-    for (var i = 0; i < titleSelectors.length; i++) {
-      var el = document.querySelector(titleSelectors[i]);
-      if (el && el.textContent && el.textContent.trim()) { title = el.textContent.trim(); break; }
-    }
-    if (!title) title = document.title.split(' - ')[0].replace('YouTube', '').trim() || 'Unknown';
-    return { url: url, videoId: videoId, title: title, modifiedUrl: 'https://www.yout-ube.com/watch?v=' + videoId };
-  } catch (err) { return { error: err.message }; }
-}
-
-var lastVideoIdSent = '';
-
-function sendToBackground(action, data) {
-  if (!runtimeAPI) return;
-  if (data.videoId === lastVideoIdSent && action !== 'thumbnailClicked') return;
-  lastVideoIdSent = data.videoId;
-  runtimeAPI.sendMessage({ action: action, videoId: data.videoId, modifiedUrl: data.modifiedUrl, title: data.title, originalUrl: data.url });
-}
 
 // Lifecycle guard
 var initialized = false;
@@ -47,13 +20,36 @@ function cacheHover(link) {
   if (hoveredAnchor === link) return;
   hoveredAnchor = link;
   try {
-    hoveredVideoId = extractVideoId(new URL(link.href));
+    hoveredVideoId = parseVideoId(new URL(link.href));
   } catch (err) { hoveredVideoId = null; }
 }
 
 function clearHover() {
   hoveredAnchor = null;
   hoveredVideoId = null;
+}
+
+function parseVideoId(urlObj) {
+  return urlObj.searchParams.get('v') || (urlObj.hostname === 'youtu.be' ? urlObj.pathname.slice(1) : null);
+}
+
+function isYouTubeHost(hostname) {
+  return /^(www\.|m\.|music\.)?youtube\.com$/.test(hostname);
+}
+
+function buildWatchUrl(videoId) {
+  return BASE_URL + '/watch?v=' + videoId;
+}
+
+// Emit event to background (event emitter only — no local state)
+function emit(type, payload) {
+  if (!runtimeAPI || !runtimeAPI.sendMessage) return;
+  runtimeAPI.sendMessage({
+    type: type,
+    version: SCHEMA_VERSION,
+    payload: payload,
+    ts: Date.now()
+  });
 }
 
 // Floating toggle button
@@ -79,7 +75,7 @@ function setupHoverAndAuxClick() {
     if (event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.defaultPrevented) return;
 
-    var isYT = /^(www\.|m\.|music\.)?youtube\.com$/.test(location.hostname);
+    var isYT = isYouTubeHost(location.hostname);
     if (!isYT) return;
 
     var videoId = null;
@@ -89,19 +85,19 @@ function setupHoverAndAuxClick() {
     if (el) {
       var link = el.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
       if (link) {
-        try { videoId = extractVideoId(new URL(link.href)); } catch (e) {}
+        try { videoId = parseVideoId(new URL(link.href)); } catch (e) {}
       }
     }
 
     // 2. Fast-path: reuse cached anchor href if DOM lookup failed
     if (!videoId && hoveredAnchor) {
-      try { videoId = extractVideoId(new URL(hoveredAnchor.href)); } catch (e) {}
+      try { videoId = parseVideoId(new URL(hoveredAnchor.href)); } catch (e) {}
     }
 
     if (videoId) {
       event.preventDefault();
       event.stopPropagation();
-      window.open('https://www.yout-ube.com/watch?v=' + videoId, '_blank');
+      window.open(buildWatchUrl(videoId), '_blank');
     }
   }, true);
 
@@ -113,6 +109,11 @@ function setupHoverAndAuxClick() {
   }, true);
 }
 
+function sendToBackground(action, data) {
+  if (!runtimeAPI || !runtimeAPI.sendMessage) return;
+  runtimeAPI.sendMessage({ type: action, payload: data, version: SCHEMA_VERSION, ts: Date.now() });
+}
+
 // Thumbnail click handler
 function setupThumbnailListener() {
   document.addEventListener('click', function(event) {
@@ -121,8 +122,14 @@ function setupThumbnailListener() {
     var href = thumbnailLink.href;
     if (!href || !href.includes('/watch')) return;
     try {
-      var videoId = extractVideoId(new URL(href));
-      if (videoId) sendToBackground('thumbnailClicked', { videoId: videoId, modifiedUrl: 'https://www.yout-ube.com/watch?v=' + videoId, url: href });
+      var videoId = parseVideoId(new URL(href));
+      if (videoId) {
+        sendToBackground('THUMBNAIL_CLICKED', {
+          videoId: videoId,
+          modifiedUrl: buildWatchUrl(videoId),
+          url: href
+        });
+      }
     } catch (err) {}
   }, true);
 }
@@ -131,8 +138,17 @@ var navTimeout = null;
 function debounceNavigation() {
   if (navTimeout) clearTimeout(navTimeout);
   navTimeout = setTimeout(function() {
-    var info = getVideoInfo();
-    if (!info.error) sendToBackground('videoChanged', info);
+    try {
+      var urlObj = new URL(window.location.href);
+      var videoId = parseVideoId(urlObj);
+      if (videoId) {
+        sendToBackground('VIDEO_CHANGED', {
+          videoId: videoId,
+          modifiedUrl: buildWatchUrl(videoId),
+          url: window.location.href
+        });
+      }
+    } catch (err) {}
   }, 300);
 }
 
@@ -142,10 +158,12 @@ function setupNavigationListener() {
   document.addEventListener('yt-page-data-updated', debounceNavigation);
 }
 
+// Message listener — receive state updates from background
 if (runtimeAPI && runtimeAPI.onMessage) {
   runtimeAPI.onMessage.addListener(function(request, sender, sendResponse) {
-    if (request.action === 'getVideoInfo') { sendResponse(getVideoInfo()); return true; }
-    if (request.action === 'getModifiedUrl') { var info = getVideoInfo(); sendResponse(info.error ? null : info.modifiedUrl); return true; }
+    if (request.type === 'STATE_UPDATE' && request.payload) {
+      // Background is pushing state — no local action needed
+    }
   });
 }
 
