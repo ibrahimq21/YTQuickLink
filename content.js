@@ -72,30 +72,36 @@ function createToggleButton() {
 // Combined hover + wheel-click handler
 function setupHoverAndAuxClick() {
   document.addEventListener('auxclick', function(event) {
+    console.log('[YTQL content] auxclick fired', { button: event.button, ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey, defaultPrevented: event.defaultPrevented, activeMode: activeMode });
     if (!activeMode) return;
     if (event.button !== 1) return;
     if (event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.defaultPrevented) return;
 
     var isYT = isYouTubeHost(location.hostname);
+    console.log('[YTQL content] domain check:', location.hostname, isYT);
     if (!isYT) return;
 
     var videoId = null;
 
     // 1. Always trust DOM at click time (truth source)
     var el = document.elementFromPoint(event.clientX, event.clientY);
+    console.log('[YTQL content] elementFromPoint:', event.clientX, event.clientY, el ? el.tagName + '.' + el.className : null);
     if (el) {
       var link = el.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
+      console.log('[YTQL content] closest link:', link ? link.href : null);
       if (link) {
-        try { videoId = parseVideoId(new URL(link.href)); } catch (e) {}
+        try { videoId = parseVideoId(new URL(link.href)); } catch (e) { console.error('[YTQL content] parse error:', e); }
       }
     }
 
     // 2. Fast-path: reuse cached anchor href if DOM lookup failed
     if (!videoId && hoveredAnchor) {
+      console.log('[YTQL content] falling back to hover cache, hoveredAnchor href:', hoveredAnchor.href);
       try { videoId = parseVideoId(new URL(hoveredAnchor.href)); } catch (e) {}
     }
 
+    console.log('[YTQL content] resolved videoId:', videoId);
     if (videoId) {
       event.preventDefault();
       event.stopPropagation();
