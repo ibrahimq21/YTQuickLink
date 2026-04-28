@@ -1,8 +1,8 @@
-// YTQuickLink - Popup Script (v5.1 — PURE VIEW)
-// Requests state from background, renders UI, sends user actions ONLY
-// No fallback logic, no tab parsing — background is single source of truth
+// YTQuickLink - Popup Script (v5.2 — FALLBACK VIEW)
+// Tries background first, falls back to reading active tab directly
 
-var runtimeAPI = (typeof browser !== 'undefined' && browser.runtime) || (typeof chrome !== 'undefined' && chrome.runtime);
+var tabsAPI = (typeof browser !== 'undefined' && browser.tabs) || (typeof chrome !== 'undefined' && chrome.tabs) || null;
+var runtimeAPI = (typeof browser !== 'undefined' && browser.runtime) || (typeof chrome !== 'undefined' && chrome.runtime) || null;
 var BASE_URL = 'https://www.yout-ube.com';
 var SCHEMA_VERSION = 1;
 
@@ -20,12 +20,11 @@ function sendMessage(msg) {
 }
 
 var api = {
-  tabs: runtimeAPI ? runtimeAPI.tabs : (typeof chrome !== 'undefined' ? chrome.tabs : null),
-  messaging: runtimeAPI,
-  storage: runtimeAPI ? runtimeAPI.storage : null
+  tabs: tabsAPI,
+  messaging: runtimeAPI
 };
 
-// UI state — local only (not shared with extension)
+// UI state — local only
 var uiState = {
   modifiedUrl: '',
   videoId: '',
@@ -81,50 +80,34 @@ function updateUIFromState(state) {
   uiState.lastUpdated = state.lastUpdated || null;
   uiState.activeMode = state.activeMode !== undefined ? state.activeMode : false;
   uiState.error = null;
-
   updateModeIndicator(uiState.activeMode);
-
-  if (uiState.videoId) {
-    setUI('YouTube Video', 'ID: ' + uiState.videoId, '', '');
-    var lnk = document.getElementById('lnk');
-    if (lnk) {
-      lnk.href = uiState.modifiedUrl;
-      lnk.style.display = 'inline-block';
-    }
-  } else {
-    setUI('No Video', '', 'Open a YouTube video first', '');
-  }
 }
 
-function requestState() {
-  setUI('Loading...', '', '', '');
-  sendMessage({ type: 'GET_STATE', version: SCHEMA_VERSION }).then(function(state) {
-    state = state && typeof state === 'object' ? state : {};
-    updateUIFromState(state);
-    // If background has no URL, fall back to reading active tab directly
-    if (!uiState.modifiedUrl || !uiState.videoId) {
-      getFromActiveTab();
-    }
-  }).catch(function() {
-    getFromActiveTab();
-  });
+function applyVideoToUI(videoId, modifiedUrl) {
+  uiState.videoId = videoId;
+  uiState.modifiedUrl = modifiedUrl;
+  setUI('YouTube Video', 'ID: ' + videoId, '', '');
+  var lnk = document.getElementById('lnk');
+  if (lnk) {
+    lnk.href = modifiedUrl;
+    lnk.style.display = 'inline-block';
+  }
 }
 
 function getFromActiveTab() {
-  console.log('[YTQL popup] getFromActiveTab: querying active tab');
-  if (!api.tabs) {
-    console.log('[YTQL popup] no tabs API available');
+  console.log('[YTQL popup] getFromActiveTab: querying active tab, tabsAPI:', !!tabsAPI);
+  if (!tabsAPI) {
+    console.log('[YTQL popup] no tabs API');
     setUI('No Video', '', 'Open a YouTube video first', '');
     return;
   }
-  api.tabs.query({ active: true, currentWindow: true }).then(function(tabs) {
+  tabsAPI.query({ active: true, currentWindow: true }).then(function(tabs) {
     var tab = tabs[0];
     if (!tab || !tab.url) {
-      console.log('[YTQL popup] no active tab found');
       setUI('No Tab', '', 'No active tab', 'err');
       return;
     }
-    console.log('[YTQL popup] active tab URL:', tab.url);
+    console.log('[YTQL popup] tab URL:', tab.url);
     if (tab.url.indexOf('youtube.com') === -1 && tab.url.indexOf('youtu.be') === -1) {
       setUI('Not YouTube', '', 'Open a YouTube video first', '');
       return;
@@ -133,21 +116,14 @@ function getFromActiveTab() {
       var urlObj = new URL(tab.url);
       var videoId = urlObj.searchParams.get('v') || (urlObj.hostname === 'youtu.be' ? urlObj.pathname.slice(1) : null);
       if (!videoId) {
-        console.log('[YTQL popup] no videoId in URL:', tab.url);
         setUI('No Video', '', 'Open a YouTube video first', '');
         return;
       }
-      uiState.videoId = videoId;
-      uiState.modifiedUrl = buildWatchUrl(videoId);
+      var modifiedUrl = buildWatchUrl(videoId);
+      console.log('[YTQL popup] parsed videoId:', videoId, 'modifiedUrl:', modifiedUrl);
       uiState.activeMode = false;
       updateModeIndicator(false);
-      console.log('[YTQL popup] parsed from tab — videoId:', videoId, 'modifiedUrl:', uiState.modifiedUrl);
-      setUI('YouTube Video', 'ID: ' + videoId, '', '');
-      var lnk = document.getElementById('lnk');
-      if (lnk) {
-        lnk.href = uiState.modifiedUrl;
-        lnk.style.display = 'inline-block';
-      }
+      applyVideoToUI(videoId, modifiedUrl);
     } catch (e) {
       console.error('[YTQL popup] URL parse error:', e);
       setUI('Error', '', 'Invalid URL', 'err');
@@ -158,15 +134,29 @@ function getFromActiveTab() {
   });
 }
 
+function requestState() {
+  setUI('Loading...', '', '', '');
+  sendMessage({ type: 'GET_STATE', version: SCHEMA_VERSION }).then(function(state) {
+    state = state && typeof state === 'object' ? state : {};
+    if (state.videoId && state.modifiedUrl) {
+      updateUIFromState(state);
+      applyVideoToUI(state.videoId, state.modifiedUrl);
+    } else {
+      getFromActiveTab();
+    }
+  }).catch(function() {
+    getFromActiveTab();
+  });
+}
+
 function handleCopy(e) {
   console.log('[YTQL popup] handleCopy called', { modifiedUrl: uiState.modifiedUrl, videoId: uiState.videoId });
   if (!uiState.modifiedUrl) {
-    console.log('[YTQL popup] no URL cached, requesting state');
     requestState();
     return;
   }
   navigator.clipboard.writeText(uiState.modifiedUrl).then(function() {
-    console.log('[YTQL popup] copied to clipboard:', uiState.modifiedUrl);
+    console.log('[YTQL popup] copied:', uiState.modifiedUrl);
     setUI('YouTube Video', 'ID: ' + uiState.videoId, '\u2713 Copied!', 'suc');
   }).catch(function(err) {
     console.error('[YTQL popup] copy failed:', err);
@@ -178,15 +168,13 @@ function handleOpenModifiedPage(e) {
   console.log('[YTQL popup] handleOpenModifiedPage called', { modifiedUrl: uiState.modifiedUrl });
   e.preventDefault();
   if (uiState.modifiedUrl) {
-    console.log('[YTQL popup] opening modified URL:', uiState.modifiedUrl);
+    console.log('[YTQL popup] opening:', uiState.modifiedUrl);
     window.open(uiState.modifiedUrl, '_blank');
   } else {
-    console.log('[YTQL popup] no URL, requesting state first');
     requestState();
   }
 }
 
-// Listen for background STATE_UPDATE pushes — reactive, no polling
 if (runtimeAPI && runtimeAPI.onMessage) {
   runtimeAPI.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.type === 'STATE_UPDATE' && request.payload) {
@@ -195,7 +183,6 @@ if (runtimeAPI && runtimeAPI.onMessage) {
   });
 }
 
-// Wire up buttons
 var btn = document.getElementById('btn');
 var lnk = document.getElementById('lnk');
 
