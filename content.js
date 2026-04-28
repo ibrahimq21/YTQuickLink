@@ -3,6 +3,11 @@
 
 var runtimeAPI = (typeof browser !== 'undefined' && browser.runtime) || (typeof chrome !== 'undefined' && chrome.runtime);
 
+// Extract video ID from any YouTube URL object
+function extractVideoId(urlObj) {
+  return urlObj.searchParams.get('v') || (urlObj.hostname === 'youtu.be' ? urlObj.pathname.slice(1) : null);
+}
+
 function getVideoInfo() {
   try {
     var url = window.location.href;
@@ -13,7 +18,7 @@ function getVideoInfo() {
     
     // Proper URL parsing
     var urlObj = new URL(url);
-    var videoId = urlObj.searchParams.get('v');
+    var videoId = extractVideoId(urlObj);
     
     if (!videoId) {
       return { error: 'No video ID found' };
@@ -74,6 +79,41 @@ function sendToBackground(action, data) {
   });
 }
 
+// Middle mouse button (auxclick) handler
+function setupAuxClickListener() {
+  document.addEventListener('auxclick', function(event) {
+    // Only intercept middle mouse button (button === 1)
+    if (event.button !== 1) return;
+    
+    // Guard: only run on youtube.com or youtu.be domains (handles embedded players & iframes)
+    if (!location.hostname.includes('youtube.com') && location.hostname !== 'youtu.be') return;
+    
+    // Let browser handle modifier-key clicks (Ctrl/Cmd+Click = open in new tab, Shift+Click = new window)
+    if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+    
+    // Skip if another handler already claimed this event
+    if (event.defaultPrevented) return;
+    
+    var videoLink = event.target.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
+    if (!videoLink) return;
+    
+    var href = videoLink.href;
+    if (!href || !href.includes('/watch')) return;
+    
+    try {
+      var urlObj = new URL(href);
+      var videoId = extractVideoId(urlObj);
+      
+      if (videoId) {
+        var modifiedUrl = 'https://www.yout-ube.com/watch?v=' + videoId;
+        event.preventDefault();
+        event.stopPropagation();
+        window.open(modifiedUrl, '_blank');
+      }
+    } catch (err) {}
+  }, true);
+}
+
 // Thumbnail click handler
 function setupThumbnailListener() {
   document.addEventListener('click', function(event) {
@@ -85,7 +125,7 @@ function setupThumbnailListener() {
     
     try {
       var urlObj = new URL(href);
-      var videoId = urlObj.searchParams.get('v');
+      var videoId = extractVideoId(urlObj);
       
       if (videoId) {
         var modifiedUrl = 'https://www.yout-ube.com/watch?v=' + videoId;
@@ -141,6 +181,7 @@ if (runtimeAPI && runtimeAPI.onMessage) {
 
 // Initialize
 var init = function() {
+  setupAuxClickListener();
   setupThumbnailListener();
   setupNavigationListener();
 };
