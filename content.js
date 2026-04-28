@@ -1,6 +1,9 @@
 // YTQuickLink - Content script
 var runtimeAPI = (typeof browser !== 'undefined' && browser.runtime) || (typeof chrome !== 'undefined' && chrome.runtime);
 
+// Feature toggle — disabled by default, user-activated via button
+var activeMode = false;
+
 // Extract video ID from any YouTube URL object
 function extractVideoId(urlObj) {
   return urlObj.searchParams.get('v') || (urlObj.hostname === 'youtu.be' ? urlObj.pathname.slice(1) : null);
@@ -53,21 +56,25 @@ function clearHover() {
   hoveredVideoId = null;
 }
 
+// Floating toggle button
+function createToggleButton() {
+  var btn = document.createElement('button');
+  btn.innerText = 'YTQuickLink: OFF';
+  btn.id = 'ytquicklink-toggle';
+  btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:999999;padding:10px 14px;background:#ff0000;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:sans-serif;font-size:13px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+  btn.onclick = function() {
+    activeMode = !activeMode;
+    btn.innerText = activeMode ? 'YTQuickLink: ON' : 'YTQuickLink: OFF';
+    btn.style.background = activeMode ? '#00aa00' : '#ff0000';
+    if (!activeMode) clearHover();
+  };
+  document.body.appendChild(btn);
+}
+
 // Combined hover + wheel-click handler
 function setupHoverAndAuxClick() {
-  // Activate hover tracking only when cursor enters video feed via pointer boundary
-  document.addEventListener('pointerenter', function(e) {
-    if (e.target.closest('ytd-rich-grid-renderer')) {
-      hoveredAnchor = null;
-      hoveredVideoId = null;
-    }
-  }, true);
-
-  document.addEventListener('pointerleave', function(e) {
-    if (e.target.closest('ytd-rich-grid-renderer')) clearHover();
-  }, true);
-
   document.addEventListener('auxclick', function(event) {
+    if (!activeMode) return;
     if (event.button !== 1) return;
     if (event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.defaultPrevented) return;
@@ -98,8 +105,9 @@ function setupHoverAndAuxClick() {
     }
   }, true);
 
-  // Hover tracking via pointerover — one event per element entry, no polling
+  // Hover tracking via pointerover — only when activeMode is on
   document.addEventListener('pointerover', function(e) {
+    if (!activeMode) return;
     var link = e.target.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
     if (link) cacheHover(link);
   }, true);
@@ -144,6 +152,7 @@ if (runtimeAPI && runtimeAPI.onMessage) {
 var init = function() {
   if (initialized) return;
   initialized = true;
+  createToggleButton();
   setupHoverAndAuxClick();
   setupThumbnailListener();
   setupNavigationListener();
