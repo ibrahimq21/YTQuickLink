@@ -36,49 +36,35 @@ function sendToBackground(action, data) {
 // Lifecycle guard
 var initialized = false;
 
-// Hover cache — optional preview only, never a truth source
+// Hover cache — stores anchor reference for fast-path reuse without DOM re-query
+var hoveredAnchor = null;
 var hoveredVideoId = null;
-var hoveredModifiedUrl = null;
 
-// rAF-based hover scheduler — only active when cursor is over feed
-var pendingHoverFrame = false;
-var lastMouseX = 0;
-var lastMouseY = 0;
-var trackingEnabled = false;
-
-function handleMouseMove(event) {
-  if (!trackingEnabled) return;
-  lastMouseX = event.clientX;
-  lastMouseY = event.clientY;
-  if (!pendingHoverFrame) {
-    pendingHoverFrame = true;
-    requestAnimationFrame(resolveHoverFrame);
-  }
+function cacheHover(link) {
+  if (hoveredAnchor === link) return;
+  hoveredAnchor = link;
+  try {
+    hoveredVideoId = extractVideoId(new URL(link.href));
+  } catch (err) { hoveredVideoId = null; }
 }
 
-function resolveHoverFrame() {
-  pendingHoverFrame = false;
-  var el = document.elementFromPoint(lastMouseX, lastMouseY);
-  if (!el) { hoveredVideoId = null; hoveredModifiedUrl = null; return; }
-  var link = el.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
-  if (!link) { hoveredVideoId = null; hoveredModifiedUrl = null; return; }
-  var href = link.href;
-  if (!href || !href.includes('/watch')) { hoveredVideoId = null; hoveredModifiedUrl = null; return; }
-  try {
-    var videoId = extractVideoId(new URL(href));
-    if (videoId) { hoveredVideoId = videoId; hoveredModifiedUrl = 'https://www.yout-ube.com/watch?v=' + videoId; }
-  } catch (err) {}
+function clearHover() {
+  hoveredAnchor = null;
+  hoveredVideoId = null;
 }
 
 // Combined hover + wheel-click handler
 function setupHoverAndAuxClick() {
-  // Activate hover tracking only when cursor enters video feed
-  document.addEventListener('mouseover', function(e) {
-    if (e.target.closest('ytd-rich-grid-renderer')) trackingEnabled = true;
+  // Activate hover tracking only when cursor enters video feed via pointer boundary
+  document.addEventListener('pointerenter', function(e) {
+    if (e.target.closest('ytd-rich-grid-renderer')) {
+      hoveredAnchor = null;
+      hoveredVideoId = null;
+    }
   }, true);
 
-  document.addEventListener('mouseout', function(e) {
-    if (e.target.closest('ytd-rich-grid-renderer')) trackingEnabled = false;
+  document.addEventListener('pointerleave', function(e) {
+    if (e.target.closest('ytd-rich-grid-renderer')) clearHover();
   }, true);
 
   document.addEventListener('auxclick', function(event) {
@@ -86,7 +72,7 @@ function setupHoverAndAuxClick() {
     if (event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.defaultPrevented) return;
 
-    var isYT = /(^|\.)youtube\.com$/.test(location.hostname);
+    var isYT = /^(www\.|m\.|music\.)?youtube\.com$/.test(location.hostname);
     if (!isYT) return;
 
     var videoId = null;
@@ -100,8 +86,10 @@ function setupHoverAndAuxClick() {
       }
     }
 
-    // 2. Fallback: use hover cache only if DOM lookup failed
-    if (!videoId) videoId = hoveredVideoId;
+    // 2. Fast-path: reuse cached anchor href if DOM lookup failed
+    if (!videoId && hoveredAnchor) {
+      try { videoId = extractVideoId(new URL(hoveredAnchor.href)); } catch (e) {}
+    }
 
     if (videoId) {
       event.preventDefault();
@@ -110,7 +98,11 @@ function setupHoverAndAuxClick() {
     }
   }, true);
 
-  document.addEventListener('mousemove', handleMouseMove, true);
+  // Hover tracking via pointerover — one event per element entry, no polling
+  document.addEventListener('pointerover', function(e) {
+    var link = e.target.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
+    if (link) cacheHover(link);
+  }, true);
 }
 
 // Thumbnail click handler
