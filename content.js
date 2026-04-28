@@ -79,39 +79,67 @@ function sendToBackground(action, data) {
   });
 }
 
-// Middle mouse button (auxclick) handler
-function setupAuxClickListener() {
-  document.addEventListener('auxclick', function(event) {
-    // Only intercept middle mouse button (button === 1)
-    if (event.button !== 1) return;
-    
-    // Guard: only run on youtube.com or youtu.be domains (handles embedded players & iframes)
-    if (!location.hostname.includes('youtube.com') && location.hostname !== 'youtu.be') return;
-    
-    // Let browser handle modifier-key clicks (Ctrl/Cmd+Click = open in new tab, Shift+Click = new window)
-    if (event.ctrlKey || event.metaKey || event.shiftKey) return;
-    
-    // Skip if another handler already claimed this event
-    if (event.defaultPrevented) return;
-    
-    var videoLink = event.target.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
-    if (!videoLink) return;
-    
-    var href = videoLink.href;
-    if (!href || !href.includes('/watch')) return;
-    
+// Unified YouTube link tracker — shared state (preview only, not relied on for auxclick)
+var hoveredVideoId = null;
+var hoveredModifiedUrl = null;
+var hoverThrottleTimeout = null;
+var HOVER_THROTTLE_MS = 150;
+
+// Throttled hover detection (preview signal only)
+function handleHover(event) {
+  if (hoverThrottleTimeout) return;
+  hoverThrottleTimeout = setTimeout(function() {
+    hoverThrottleTimeout = null;
+    var el = document.elementFromPoint(event.clientX, event.clientY);
+    if (!el) { hoveredVideoId = null; hoveredModifiedUrl = null; return; }
+    var link = el.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
+    if (!link) { hoveredVideoId = null; hoveredModifiedUrl = null; return; }
+    var href = link.href;
+    if (!href || !href.includes('/watch')) { hoveredVideoId = null; hoveredModifiedUrl = null; return; }
     try {
-      var urlObj = new URL(href);
-      var videoId = extractVideoId(urlObj);
-      
+      var videoId = extractVideoId(new URL(href));
       if (videoId) {
-        var modifiedUrl = 'https://www.yout-ube.com/watch?v=' + videoId;
-        event.preventDefault();
-        event.stopPropagation();
-        window.open(modifiedUrl, '_blank');
+        hoveredVideoId = videoId;
+        hoveredModifiedUrl = 'https://www.yout-ube.com/watch?v=' + videoId;
       }
     } catch (err) {}
+  }, HOVER_THROTTLE_MS);
+}
+
+// Fresh elementFromPoint resolver — always called at auxclick time, never from stored state
+function resolveVideoLinkAt(x, y) {
+  var el = document.elementFromPoint(x, y);
+  if (!el) return null;
+  var link = el.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
+  if (!link) return null;
+  var href = link.href;
+  if (!href || !href.includes('/watch')) return null;
+  try {
+    return extractVideoId(new URL(href));
+  } catch (err) {
+    return null;
+  }
+}
+
+// Unified auxclick handler — always resolves fresh at click time
+function setupAuxClickListener() {
+  document.addEventListener('auxclick', function(event) {
+    if (event.button !== 1) return;
+    if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.defaultPrevented) return;
+    if (!location.hostname.includes('youtube.com') && location.hostname !== 'youtu.be') return;
+
+    // Always revalidate DOM at click time via elementFromPoint — no stored state
+    var videoId = resolveVideoLinkAt(event.clientX, event.clientY);
+    if (!videoId) return;
+
+    var modifiedUrl = 'https://www.yout-ube.com/watch?v=' + videoId;
+    event.preventDefault();
+    event.stopPropagation();
+    window.open(modifiedUrl, '_blank');
   }, true);
+
+  document.addEventListener('mousemove', handleHover, true);
 }
 
 // Thumbnail click handler
