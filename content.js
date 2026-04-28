@@ -36,14 +36,18 @@ function sendToBackground(action, data) {
 // Lifecycle guard
 var initialized = false;
 
-// rAF-based hover scheduler
-var pendingHoverFrame = false;
-var lastMouseX = 0;
-var lastMouseY = 0;
+// Hover cache — optional preview only, never a truth source
 var hoveredVideoId = null;
 var hoveredModifiedUrl = null;
 
+// rAF-based hover scheduler — only active when cursor is over feed
+var pendingHoverFrame = false;
+var lastMouseX = 0;
+var lastMouseY = 0;
+var trackingEnabled = false;
+
 function handleMouseMove(event) {
+  if (!trackingEnabled) return;
   lastMouseX = event.clientX;
   lastMouseY = event.clientY;
   if (!pendingHoverFrame) {
@@ -68,24 +72,36 @@ function resolveHoverFrame() {
 
 // Combined hover + wheel-click handler
 function setupHoverAndAuxClick() {
+  // Activate hover tracking only when cursor enters video feed
+  document.addEventListener('mouseover', function(e) {
+    if (e.target.closest('ytd-rich-grid-renderer')) trackingEnabled = true;
+  }, true);
+
+  document.addEventListener('mouseout', function(e) {
+    if (e.target.closest('ytd-rich-grid-renderer')) trackingEnabled = false;
+  }, true);
+
   document.addEventListener('auxclick', function(event) {
     if (event.button !== 1) return;
     if (event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.defaultPrevented) return;
-    if (!/(^|\.)youtube\.com$/.test(location.hostname) && location.hostname !== 'youtu.be') return;
 
-    // Fast-path: use cached hover video ID if available
-    var videoId = hoveredVideoId;
-    if (!videoId) {
-      // Fallback: resolve fresh at click time via elementFromPoint
-      var el = document.elementFromPoint(event.clientX, event.clientY);
-      if (!el) return;
+    var isYT = /(^|\.)youtube\.com$/.test(location.hostname);
+    if (!isYT) return;
+
+    var videoId = null;
+
+    // 1. Always trust DOM at click time (truth source)
+    var el = document.elementFromPoint(event.clientX, event.clientY);
+    if (el) {
       var link = el.closest('a#thumbnail, a.thumbnail, a.ytd-thumbnail, a[href*="/watch"]');
-      if (!link) return;
-      var href = link.href;
-      if (!href || !href.includes('/watch')) return;
-      try { videoId = extractVideoId(new URL(href)); } catch (e) { return; }
+      if (link) {
+        try { videoId = extractVideoId(new URL(link.href)); } catch (e) {}
+      }
     }
+
+    // 2. Fallback: use hover cache only if DOM lookup failed
+    if (!videoId) videoId = hoveredVideoId;
 
     if (videoId) {
       event.preventDefault();
@@ -105,8 +121,7 @@ function setupThumbnailListener() {
     var href = thumbnailLink.href;
     if (!href || !href.includes('/watch')) return;
     try {
-      var urlObj = new URL(href);
-      var videoId = extractVideoId(urlObj);
+      var videoId = extractVideoId(new URL(href));
       if (videoId) sendToBackground('thumbnailClicked', { videoId: videoId, modifiedUrl: 'https://www.yout-ube.com/watch?v=' + videoId, url: href });
     } catch (err) {}
   }, true);
