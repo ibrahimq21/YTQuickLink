@@ -6,14 +6,16 @@ var runtimeAPI = (typeof browser !== 'undefined' && browser.runtime) || (typeof 
 var BASE_URL = 'https://www.yout-ube.com';
 var SCHEMA_VERSION = 1;
 
-// Unified API wrapper — MV3 safe Promise wrapper
+// Unified API wrapper — MV3-safe Promise wrapper with callback guarantee
 function sendMessage(msg) {
   return new Promise(function(resolve) {
-    if (runtimeAPI && runtimeAPI.sendMessage) {
-      runtimeAPI.sendMessage(msg, resolve);
-    } else {
+    if (!runtimeAPI || !runtimeAPI.sendMessage) {
       resolve(null);
+      return;
     }
+    runtimeAPI.sendMessage(msg, function(response) {
+      resolve(response || null);
+    });
   });
 }
 
@@ -98,13 +100,9 @@ function updateUIFromState(state) {
 function requestState() {
   setUI('Loading...', '', '', '');
   sendMessage({ type: 'GET_STATE', version: SCHEMA_VERSION }).then(function(state) {
-    if (state && state.videoId) {
-      updateUIFromState(state);
-    } else {
-      uiState.activeMode = state && state.activeMode !== undefined ? state.activeMode : false;
-      updateModeIndicator(uiState.activeMode);
-      setUI('No Video', '', 'Open a YouTube video first', '');
-    }
+    // Always expect a valid object from background — fallback to empty state if null
+    state = state && typeof state === 'object' ? state : {};
+    updateUIFromState(state);
   }).catch(function() {
     setUI('Error', '', 'Could not reach extension', 'err');
   });
