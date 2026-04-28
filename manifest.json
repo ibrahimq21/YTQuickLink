@@ -3,6 +3,7 @@
   "name": "YTQuickLink",
   "short_name": "YTQuickLink",
   "version": "1.8",
+  "id": "ytquicklink@ibrahimqureshi",
   "description": "Grab YouTube links with one click",
   "permissions": [
     "activeTab",
@@ -25,5 +26,15 @@
   },
   "background": {
     "scripts": ["background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ytquicklink@ibrahimqureshi",
+      "data_collection_permissions": {
+        "required": ["none"],
+        "optional": [],
+        "description": "This extension does not collect or transmit any user data."
+      }
+    }
   }
 }

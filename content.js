@@ -107,7 +107,7 @@ function setupThumbnailListener() {
 var navTimeout = null;
 function debounceNavigation() {
   if (navTimeout) clearTimeout(navTimeout);
-  navTimeout setTimeout(function() {
+  navTimeout = setTimeout(function() {
     var info = getVideoInfo();
     if (!info.error) {
       sendToBackground('videoChanged', info);
