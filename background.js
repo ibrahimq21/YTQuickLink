@@ -2,6 +2,7 @@
 // Single source of truth — stores, validates, broadcasts state
 
 var runtimeAPI = (typeof browser !== 'undefined' && browser.runtime) || (typeof chrome !== 'undefined' && chrome.runtime);
+var storageAPI = (typeof browser !== 'undefined' && browser.storage) || (typeof chrome !== 'undefined' && chrome.storage) || null;
 var BASE_URL = 'https://www.yout-ube.com';
 var SCHEMA_VERSION = 1;
 
@@ -47,8 +48,8 @@ function reduce(event) {
 // Storage wrapper
 var api = {
   storage: {
-    get: function(keys) { return runtimeAPI.storage.local.get(keys); },
-    set: function(data) { return runtimeAPI.storage.local.set(data); }
+    get: function(keys) { return storageAPI ? storageAPI.local.get(keys) : Promise.resolve({}); },
+    set: function(data) { return storageAPI ? storageAPI.local.set(data) : Promise.resolve(); }
   }
 };
 
