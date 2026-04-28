@@ -1,4 +1,4 @@
-// YTQuickLink - Popup Script (v5 — PURE VIEW)
+// YTQuickLink - Popup Script (v5.1 — PURE VIEW)
 // Requests state from background, renders UI, sends user actions ONLY
 // No fallback logic, no tab parsing — background is single source of truth
 
@@ -96,11 +96,9 @@ function updateUIFromState(state) {
   }
 }
 
-// Request state from background — NO fallback to tab parsing
 function requestState() {
   setUI('Loading...', '', '', '');
   sendMessage({ type: 'GET_STATE', version: SCHEMA_VERSION }).then(function(state) {
-    // Always expect a valid object from background — fallback to empty state if null
     state = state && typeof state === 'object' ? state : {};
     updateUIFromState(state);
   }).catch(function() {
@@ -108,20 +106,7 @@ function requestState() {
   });
 }
 
-function handleGrabLink() {
-  requestState();
-}
-
-function handleOpenLink(e) {
-  e.preventDefault();
-  if (uiState.modifiedUrl) {
-    window.open(uiState.modifiedUrl, '_blank');
-  } else {
-    requestState();
-  }
-}
-
-function handleCopyLink() {
+function doCopy() {
   if (!uiState.modifiedUrl) {
     requestState();
     return;
@@ -133,6 +118,15 @@ function handleCopyLink() {
   });
 }
 
+function handleOpenLink(e) {
+  e.preventDefault();
+  if (uiState.modifiedUrl) {
+    window.open(uiState.modifiedUrl, '_blank');
+  } else {
+    requestState();
+  }
+}
+
 // Listen for background STATE_UPDATE pushes — reactive, no polling
 if (runtimeAPI && runtimeAPI.onMessage) {
   runtimeAPI.onMessage.addListener(function(request, sender, sendResponse) {
@@ -142,11 +136,12 @@ if (runtimeAPI && runtimeAPI.onMessage) {
   });
 }
 
+// Wire up buttons
 var btn = document.getElementById('btn');
 var lnk = document.getElementById('lnk');
 
-if (btn) btn.onclick = handleGrabLink;
-if (lnk) lnk.onclick = handleOpenLink;
+if (btn) btn.addEventListener('click', doCopy);
+if (lnk) lnk.addEventListener('click', handleOpenLink);
 
 addModeIndicator();
 requestState();
