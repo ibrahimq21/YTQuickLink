@@ -101,8 +101,60 @@ function requestState() {
   sendMessage({ type: 'GET_STATE', version: SCHEMA_VERSION }).then(function(state) {
     state = state && typeof state === 'object' ? state : {};
     updateUIFromState(state);
+    // If background has no URL, fall back to reading active tab directly
+    if (!uiState.modifiedUrl || !uiState.videoId) {
+      getFromActiveTab();
+    }
   }).catch(function() {
-    setUI('Error', '', 'Could not reach extension', 'err');
+    getFromActiveTab();
+  });
+}
+
+function getFromActiveTab() {
+  console.log('[YTQL popup] getFromActiveTab: querying active tab');
+  if (!api.tabs) {
+    console.log('[YTQL popup] no tabs API available');
+    setUI('No Video', '', 'Open a YouTube video first', '');
+    return;
+  }
+  api.tabs.query({ active: true, currentWindow: true }).then(function(tabs) {
+    var tab = tabs[0];
+    if (!tab || !tab.url) {
+      console.log('[YTQL popup] no active tab found');
+      setUI('No Tab', '', 'No active tab', 'err');
+      return;
+    }
+    console.log('[YTQL popup] active tab URL:', tab.url);
+    if (tab.url.indexOf('youtube.com') === -1 && tab.url.indexOf('youtu.be') === -1) {
+      setUI('Not YouTube', '', 'Open a YouTube video first', '');
+      return;
+    }
+    try {
+      var urlObj = new URL(tab.url);
+      var videoId = urlObj.searchParams.get('v') || (urlObj.hostname === 'youtu.be' ? urlObj.pathname.slice(1) : null);
+      if (!videoId) {
+        console.log('[YTQL popup] no videoId in URL:', tab.url);
+        setUI('No Video', '', 'Open a YouTube video first', '');
+        return;
+      }
+      uiState.videoId = videoId;
+      uiState.modifiedUrl = buildWatchUrl(videoId);
+      uiState.activeMode = false;
+      updateModeIndicator(false);
+      console.log('[YTQL popup] parsed from tab — videoId:', videoId, 'modifiedUrl:', uiState.modifiedUrl);
+      setUI('YouTube Video', 'ID: ' + videoId, '', '');
+      var lnk = document.getElementById('lnk');
+      if (lnk) {
+        lnk.href = uiState.modifiedUrl;
+        lnk.style.display = 'inline-block';
+      }
+    } catch (e) {
+      console.error('[YTQL popup] URL parse error:', e);
+      setUI('Error', '', 'Invalid URL', 'err');
+    }
+  }).catch(function(err) {
+    console.error('[YTQL popup] tab query failed:', err);
+    setUI('Error', '', 'Could not access tab', 'err');
   });
 }
 
