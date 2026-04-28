@@ -99,6 +99,7 @@ function setupHoverAndAuxClick() {
     if (videoId) {
       event.preventDefault();
       event.stopPropagation();
+      event.stopImmediatePropagation();
       window.open(buildWatchUrl(videoId), '_blank');
     }
   }, true);
